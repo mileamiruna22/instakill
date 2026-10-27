@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "InstaKill starter — mini social-media platform for Programming for AI"
 requires-python = ">=3.11"
 dependencies = [
+    "numpy>=1.26",
+    "sentence-transformers>=3.0",
     "fastapi>=0.111",
     "uvicorn>=0.29",
     "pydantic>=2.7",

@@ -1,9 +1,101 @@
 # API contract
 
-> **Status: written contract only.** None of the endpoints below are implemented yet.
-> This document describes the behavior the implementation must match when it is built.
+| Endpoint        | Status                      |
+|-----------------|-----------------------------|
+| `GET /health`   | Implemented                 |
+| `GET /search`   | **Implemented** (Week 3)    |
+| `POST /posts`   | Planned — written contract only, not implemented yet |
 
-## `POST /posts` — submit a new post
+## Error envelope
+
+Every error response, from any endpoint, has this shape:
+
+```json
+{
+  "error": {
+    "code": "query_empty",
+    "message": "q must not be empty",
+    "field": "q"
+  }
+}
+```
+
+`code` is stable and meant for programs; `message` is for humans and may change; `field` names the offending request parameter and is `null` when no single field applies.
+
+## `GET /search` — semantic search over posts
+
+Returns the posts whose meaning is closest to the query, best first. Matching uses embeddings from a pretrained sentence encoder and cosine similarity, so a query like `cheap dinner` can find a post about a "budget-friendly restaurant" even when no words overlap.
+
+### Request
+
+```http
+GET /search?q=cheap%20dinner&limit=5
+```
+
+| Query parameter | Type    | Required | Default | Rules |
+|-----------------|---------|----------|---------|-------|
+| `q`             | string  | yes      | —       | Not empty and not only whitespace. Missing and empty are treated the same way. |
+| `limit`         | integer | no       | `10`    | Whole number from 1 to 20, inclusive. |
+
+### Successful response — `200 OK`
+
+```json
+{
+  "query": "cheap dinner",
+  "results": [
+    {
+      "post_id": 3,
+      "user_id": 2,
+      "content": "just shipped a cosine similarity search, feels great",
+      "score": 0.6123724356957945
+    }
+  ]
+}
+```
+
+| Field                    | Type    | Notes |
+|--------------------------|---------|-------|
+| `query`                  | string  | The `q` value exactly as the client sent it (not stripped). |
+| `results`                | array   | At most `limit` items; empty when no posts are indexed. |
+| `results[].post_id`      | integer | Id of the post. |
+| `results[].user_id`      | integer | Author of the post. |
+| `results[].content`      | string  | Post text. |
+| `results[].score`        | number  | Cosine similarity, between -1 and 1 (higher = closer in meaning). |
+
+**Ordering:** by `score` descending. Posts with exactly equal scores are ordered by `post_id` ascending, so the same request always returns the same order.
+
+**Index freshness:** the search index is built once when the application starts. Posts added afterwards do not appear in results until the index is rebuilt (see the README).
+
+### Error responses
+
+| HTTP status | `code`               | `field`  | When |
+|-------------|----------------------|----------|------|
+| 422         | `query_empty`        | `q`      | `q` is missing, empty, or only whitespace. |
+| 422         | `limit_out_of_range` | `limit`  | `limit` is an integer outside 1..20. |
+| 422         | `invalid_request`    | `limit`  | `limit` is not an integer (e.g. `limit=abc`). |
+| 503         | `index_not_ready`    | `null`   | The search index has not been built (the application did not finish starting up). |
+
+Evaluation order: parameter types first (`invalid_request`), then `q`, then `limit`.
+
+Examples:
+
+```http
+GET /search?q=
+
+422 Unprocessable Entity
+{"error": {"code": "query_empty", "message": "q must not be empty", "field": "q"}}
+```
+
+```http
+GET /search?q=cheap%20dinner&limit=99
+
+422 Unprocessable Entity
+{"error": {"code": "limit_out_of_range", "message": "limit must be between 1 and 20", "field": "limit"}}
+```
+
+## `POST /posts` — submit a new post (planned)
+
+> **Written contract only.** This endpoint is not implemented yet.
 
 Creates a post on behalf of an existing user. (Implemented in a later week; the
 validation rules below are already encoded in `PostService.prepare_post` in
@@ -43,7 +135,7 @@ The body has the same shape as the `Post` model in `app/domain/models.py`.
 
 ### Error responses
 
-Every error uses the same envelope:
+Errors use the [error envelope](#error-envelope) defined at the top of this document.
 
 ```json
 {
@@ -66,4 +158,4 @@ Evaluation order: request shape, then `content` rules, then author lookup. Only 
 
 ### Out of scope for this contract
 
-Listing or reading posts, editing, deleting, feeds, ranking, search, and any ML-based behavior.
+Listing or reading posts, editing, deleting, feeds and ranking.
